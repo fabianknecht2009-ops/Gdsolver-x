@@ -1,0 +1,61 @@
+
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Geode CLI
+        uses: geode-sdk/setup-geode@main
+
+      - name: Build mod
+        shell: pwsh
+        run: ./scripts/ci-build-2209.ps1
+
+  android:
+    name: Android64
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the mod
+        id: build
+        continue-on-error: true
+        uses: geode-sdk/build-geode-mod@main
+        with:
+          target: Android64
+          bindings-ref: f050fd74ad531b0827377c97510cb807903ff1b3
+          configure-args: -DGDSOLVER_BUILD_DP=OFF -DCMAKE_CXX_FLAGS=-ferror-limit=0
+
+      - name: List compile errors
+        if: steps.build.outcome == 'failure'
+        shell: bash
+        run: |
+          set +e
+          cmake --build build -- -k 0 > build-errors.log 2>&1
+          status=$?
+          grep -E "error:" build-errors.log | sort | uniq -c | sort -rn
+          exit $status
+
+      - name: Upload package
+        if: steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: geode-package-android64
+          path: ${{ steps.build.outputs.build-output }}
